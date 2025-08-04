@@ -3,18 +3,24 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from werkzeug.security import generate_password_hash
 from dotenv import load_dotenv
+from pathlib import Path
 import os
 
-# Load environment variables from .env
 load_dotenv()
 
-# Initialize Flask app
 app = Flask(__name__)
 
-# Configure database
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'fallback-key')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///instance/bankease.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Database configuration
+db_path = Path("/Users/vedithareddyavuthu/Projects/BankEase/backend/instance/bankease.db")
+db_path.parent.mkdir(parents=True, exist_ok=True)
+
+# Verify permissions
+if not os.access(db_path.parent, os.W_OK):
+    raise PermissionError(f"Cannot write to {db_path.parent}")
+
+app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+
+print("Database URI being used:", app.config['SQLALCHEMY_DATABASE_URI'])
 
 # Initialize database
 db = SQLAlchemy(app)
@@ -56,7 +62,10 @@ def add_test_data():
     try:
         # Create test users
         user1 = User(username="john_doe", email="john@bankease.com")
+        user1.set_password("testpassword1")  
+
         user2 = User(username="jane_smith", email="jane@bankease.com")
+        user2.set_password("testpassword2")  
         
         db.session.add(user1)
         db.session.add(user2)
@@ -74,7 +83,7 @@ def add_test_data():
     
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    
+
 @app.route('/register', methods=['POST'])
 def register():
     try:
