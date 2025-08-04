@@ -1,10 +1,13 @@
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
 from pathlib import Path
 import os
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+import logging
+from datetime import datetime
 
 load_dotenv()
 
@@ -22,6 +25,10 @@ app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 
 print("Database URI being used:", app.config['SQLALCHEMY_DATABASE_URI'])
 
+# JWT config
+app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'super-secret')
+jwt = JWTManager(app)
+
 # Initialize database
 db = SQLAlchemy(app)
 
@@ -34,13 +41,21 @@ class User(db.Model):
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
 
-
+# Account and Transaction models
 class Account(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     balance = db.Column(db.Float, default=0.0)
 
+class Transaction(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    from_account = db.Column(db.Integer, db.ForeignKey('account.id'))
+    to_account = db.Column(db.Integer, db.ForeignKey('account.id'))
+    amount = db.Column(db.Float)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 # Create tables
 with app.app_context():
     db.create_all()
@@ -54,35 +69,30 @@ def home():
 def where_is_db():
     return jsonify({
         "current_directory": os.getcwd(),
-        "db_path": os.path.abspath('bankease.db')
+        "db_path": str(db_path.absolute())
     })
 
 @app.route('/add-test-data')
 def add_test_data():
     try:
-        # Create test users
         user1 = User(username="john_doe", email="john@bankease.com")
-        user1.set_password("testpassword1")  
-
+        user1.set_password("test123")  
         user2 = User(username="jane_smith", email="jane@bankease.com")
-        user2.set_password("testpassword2")  
-        
-        db.session.add(user1)
-        db.session.add(user2)
+        user2.set_password("test123")
+
+        db.session.add_all([user1, user2])
         db.session.commit()
-        
-        # Create accounts for these users
-        account1 = Account(user_id=user1.id, balance=1000.0)
-        account2 = Account(user_id=user2.id, balance=500.0)
-        
-        db.session.add(account1)
-        db.session.add(account2)
+
+        account1 = Account(user_id=user1.id, balance=1000)
+        account2 = Account(user_id=user2.id, balance=500)
+
+        db.session.add_all([account1, account2])
         db.session.commit()
-        
-        return jsonify({"message": "Test data added successfully!"})
-    
+
+        return jsonify({"message": "Test users and accounts added."})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -131,6 +141,56 @@ def register():
         db.session.rollback()
         app.logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
+    
+# login route   
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    user = User.query.filter_by(username=data['username']).first()
+    if user and user.check_password(data['password']):
+        access_token = create_access_token(identity=str(user.id))
+        return jsonify(access_token=access_token), 200
+    return jsonify({"error": "Invalid credentials"}), 401
+
+# Protected route example
+@app.route('/protected', methods=['GET'])
+@jwt_required()
+def protected():
+    current_user_id = get_jwt_identity()
+    return jsonify(logged_in_as=current_user_id), 200
+
+# Transfer money between accounts
+@app.route('/transfer', methods=['POST'])
+@jwt_required()
+def transfer():
+    data = request.get_json()
+    from_id = data['from_account']
+    to_id = data['to_account']
+    amount = data['amount']
+    
+    from_acc = Account.query.get(from_id)
+    to_acc = Account.query.get(to_id)
+
+    if from_acc.balance < amount:
+        return jsonify({"error": "Insufficient balance"}), 400
+
+    from_acc.balance -= amount
+    to_acc.balance += amount
+
+    txn = Transaction(from_account=from_id, to_account=to_id, amount=amount)
+    db.session.add(txn)
+    db.session.commit()
+
+    return jsonify({"message": "Transfer successful"})
+
+# Get balance of an account
+@app.route('/balance/<int:account_id>', methods=['GET'])
+@jwt_required()
+def get_balance(account_id):
+    account = Account.query.get_or_404(account_id)
+    return jsonify(balance=account.balance)
+
+
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5050))
