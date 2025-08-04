@@ -1,0 +1,2 @@
+.env # Ignores secret keys
+venv/ # Ignores virtual environment
