@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 from pathlib import Path
 import os
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
-import logging
 from datetime import datetime
 
 load_dotenv()
@@ -50,12 +49,16 @@ class Account(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     balance = db.Column(db.Float, default=0.0)
 
+
 class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    from_account = db.Column(db.Integer, db.ForeignKey('account.id'))
-    to_account = db.Column(db.Integer, db.ForeignKey('account.id'))
-    amount = db.Column(db.Float)
+    from_account = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False)
+    to_account = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    is_fraud = db.Column(db.Boolean, default=False)
+
+
 # Create tables
 with app.app_context():
     db.create_all()
@@ -146,17 +149,23 @@ def register():
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
+
+    if not data or 'username' not in data or 'password' not in data:
+        return jsonify({"error": "Username and password are required"}), 400
+
     user = User.query.filter_by(username=data['username']).first()
     if user and user.check_password(data['password']):
         access_token = create_access_token(identity=str(user.id))
         return jsonify(access_token=access_token), 200
-    return jsonify({"error": "Invalid credentials"}), 401
+    else:
+        return jsonify({"error": "Invalid credentials"}), 401
+
 
 # Protected route example
 @app.route('/protected', methods=['GET'])
 @jwt_required()
 def protected():
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     return jsonify(logged_in_as=current_user_id), 200
 
 # Transfer money between accounts
@@ -167,9 +176,12 @@ def transfer():
     from_id = data['from_account']
     to_id = data['to_account']
     amount = data['amount']
-    
+
     from_acc = Account.query.get(from_id)
     to_acc = Account.query.get(to_id)
+
+    if not from_acc or not to_acc:
+        return jsonify({"error": "Invalid account ID(s)"}), 400
 
     if from_acc.balance < amount:
         return jsonify({"error": "Insufficient balance"}), 400
@@ -181,7 +193,7 @@ def transfer():
     db.session.add(txn)
     db.session.commit()
 
-    return jsonify({"message": "Transfer successful"})
+    return jsonify({"message": "Transfer successful"}), 200
 
 # Get balance of an account
 @app.route('/balance/<int:account_id>', methods=['GET'])
@@ -190,7 +202,29 @@ def get_balance(account_id):
     account = Account.query.get_or_404(account_id)
     return jsonify(balance=account.balance)
 
-
+# Error handlers
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({
+        "error": "Resource not found",
+        "status_code": 404,
+        "documentation": "https://github.com/veditha/BankEase/docs"  # Update later
+    }), 404
+# Handle 500 errors
+@app.errorhandler(500)
+def server_error(e):
+    app.logger.error(f"500 error: {str(e)}")  # Log to console
+    return jsonify({
+        "error": "Internal server error",
+        "status_code": 500
+    }), 500
+# Handle 400 errors
+@app.errorhandler(400)
+def bad_request(e):
+    return jsonify({
+        "error": "Bad request",
+        "status_code": 400
+    }), 400
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5050))

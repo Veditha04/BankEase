@@ -1,2 +1,53 @@
-.env # Ignores secret keys
-venv/ # Ignores virtual environment
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv/
+
+# Flask/Instance Database
+instance/
+*.db
+
+# Environment Variables
+.env
+.env.*
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+
+# OS-Specific
+.DS_Store
+Thumbs.db
+
+# Logs and Debug
+*.log
+
+# Pytest / Coverage
+.coverage
+htmlcov/
+.tox/
+.pytest_cache/
+
+# Jupyter Notebooks Checkpoints
+.ipynb_checkpoints/
+
+# Build
+build/
+dist/
+*.egg-info/
+
+backend/instance/bankease.db
+
+# Ignore saved model binaries
+*.pkl
+backend/models/
+
