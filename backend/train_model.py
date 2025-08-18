@@ -1,5 +1,6 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
@@ -38,9 +39,17 @@ X = df.drop("is_fraud", axis=1)
 y = df["is_fraud"]
 
 # Split data
-X_train, X_test, y_train, y_test = train_test_split(
+X_train_raw, X_test_raw, y_train, y_test = train_test_split(
     X, y, test_size=0.2, stratify=y, random_state=42
 )
+
+# Scale features
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train_raw)
+X_test = scaler.transform(X_test_raw)
+
+# Save scaler
+joblib.dump(scaler, "models/scaler.pkl")
 
 def plot_confusion(y_true, y_pred, model_name):
     cm = confusion_matrix(y_true, y_pred)
@@ -71,7 +80,9 @@ print("\n📊 Logistic Regression Results:")
 print(classification_report(y_test, lr_preds))
 plot_confusion(y_test, lr_preds, "LogisticRegression")
 plot_roc(y_test, lr.predict_proba(X_test)[:, 1], "LogisticRegression")
-print(f"📉 Logistic CV F1: {cross_val_score(lr, X, y, cv=5, scoring='f1').mean():.2f}")
+X_scaled = scaler.fit_transform(X)
+print(f"📉 Logistic CV F1: {cross_val_score(lr, X_scaled, y, cv=5, scoring='f1').mean():.2f}")
+
 
 print("\n⚡ Training XGBoost Classifier...")
 xgb = XGBClassifier(use_label_encoder=False, eval_metric="logloss")
@@ -81,6 +92,7 @@ print("\n📊 XGBoost Results:")
 print(classification_report(y_test, xgb_preds))
 plot_confusion(y_test, xgb_preds, "XGBoost")
 plot_roc(y_test, xgb.predict_proba(X_test)[:, 1], "XGBoost")
+X_scaled = scaler.fit_transform(X)
 print(f"📉 XGBoost CV F1: {cross_val_score(xgb, X, y, cv=5, scoring='f1').mean():.2f}")
 
 xgb_importance = pd.Series(xgb.feature_importances_, index=X.columns)
@@ -97,6 +109,7 @@ print("\n📊 Random Forest Results:")
 print(classification_report(y_test, rf_preds))
 plot_confusion(y_test, rf_preds, "RandomForest")
 plot_roc(y_test, rf.predict_proba(X_test)[:, 1], "RandomForest")
+X_scaled = scaler.fit_transform(X)
 print(f"📉 RF CV F1: {cross_val_score(rf, X, y, cv=5, scoring='f1').mean():.2f}")
 
 rf_importance = pd.Series(rf.feature_importances_, index=X.columns)
@@ -109,6 +122,7 @@ print("\n✅ Saving models...")
 joblib.dump(lr, "models/logistic_model.pkl")
 joblib.dump(xgb, "models/xgb_model.pkl")
 joblib.dump(rf, "models/rf_model.pkl")
+
 
 print("\n📋 Summary:")
 print(f"Logistic F1: {f1_score(y_test, lr_preds):.2f}")

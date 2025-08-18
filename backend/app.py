@@ -7,10 +7,14 @@ from pathlib import Path
 import os
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from datetime import datetime
+from api import api_bp 
 
 load_dotenv()
 
 app = Flask(__name__)
+
+# Register blueprint for all API routes (e.g., /api/predict, /api/status)
+app.register_blueprint(api_bp, url_prefix="/api")
 
 # Database configuration
 db_path = Path("/Users/vedithareddyavuthu/Projects/BankEase/backend/instance/bankease.db")
