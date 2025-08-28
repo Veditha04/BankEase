@@ -8,10 +8,43 @@ import os
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from datetime import datetime
 from api import api_bp 
+from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
+import logging
 
 load_dotenv()
 
 app = Flask(__name__)
+# Logging configuration
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logger = logging.getLogger("bankease")
+# CORS configuration
+ENV = os.getenv("FLASK_ENV", "development").lower()
+
+DEV_ORIGINS = ["http://localhost:8501", "http://127.0.0.1:8501", "http://localhost:3000", "http://127.0.0.1:3000"]
+
+PROD_ORIGINS = os.getenv("FRONTEND_ORIGINS", "").split(",") if os.getenv("FRONTEND_ORIGINS") else []
+
+ALLOWED_ORIGINS = DEV_ORIGINS if ENV != "production" else PROD_ORIGINS
+
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ALLOWED_ORIGINS,
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
+
+# Error handlers (need logger to be set up already)
+@app.errorhandler(HTTPException)
+def handle_http(e: HTTPException):
+    logger.warning(f"HTTP {e.code} on {request.path}: {e.description}")
+    return jsonify({"error": e.name, "status": e.code}), e.code
+
+@app.errorhandler(Exception)
+def handle_any(e: Exception):
+    logger.exception(f"Unhandled exception on {request.path}")
+    return jsonify({"error": "Internal server error"}), 500
 
 # Register blueprint for all API routes (e.g., /api/predict, /api/status)
 app.register_blueprint(api_bp, url_prefix="/api")

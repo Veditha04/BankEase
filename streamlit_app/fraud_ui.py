@@ -1,73 +1,95 @@
 # streamlit_app/fraud_ui.py
-
-from matplotlib import pyplot as plt
+import time
+import json
+import requests
 import streamlit as st
-import joblib
-from pathlib import Path
-import numpy as np
-import pandas as pd
-import os
-import seaborn as sns
-print("Current Working Directory:", os.getcwd())  # Add this line at top
 
+# ----- Configuration -----
+# You can override API_BASE by creating .streamlit/secrets.toml with:
+# API_BASE = "http://localhost:5050/api"
+API_BASE = st.secrets.get("API_BASE", "http://localhost:5050/api")
 
-BASE_DIR = Path(__file__).resolve().parent.parent  # This gives you BankEase/
-models = {
-    "Logistic Regression": joblib.load(BASE_DIR / "backend/models/logistic_model.pkl"),
-    "Random Forest": joblib.load(BASE_DIR / "backend/models/rf_model.pkl"),
-    "XGBoost": joblib.load(BASE_DIR / "backend/models/xgb_model.pkl")
-}
+st.set_page_config(page_title="BankEase – Fraud Screening", layout="centered")
 
-scaler = joblib.load(BASE_DIR / "backend/models/scaler.pkl")
+# ----- Header -----
+st.title("BankEase – Transaction Screening")
+st.caption("Enter a transaction to estimate fraud likelihood.")
 
+# ----- Input form (matches backend contract) -----
+with st.form("fraud_form", clear_on_submit=False):
+    c1, c2 = st.columns(2)
 
-st.set_page_config(page_title="BankEase Fraud Detection", layout="wide")
+    with c1:
+        user_id = st.number_input("User ID", min_value=0, value=1, step=1, help="Synthetic user id used by the model.")
+        amount = st.number_input("Amount ($)", min_value=0.0, value=99.0, step=1.0)
+        location = st.number_input("Location (encoded)", min_value=0, value=0, step=1, help="Preprocessed/encoded location.")
 
-# Sidebar
-st.sidebar.markdown("## Navigation")
-st.sidebar.info("Use this app to test transactions for potential fraud.")
-st.sidebar.markdown("---")
+    with c2:
+        hour = st.number_input("Hour (0–23)", min_value=0, max_value=23, value=10, step=1)
+        dayofweek = st.number_input("Day of Week (0=Mon … 6=Sun)", min_value=0, max_value=6, value=2, step=1)
+        model = st.selectbox("Model family", options=["xgb", "rf", "lr"], index=0)
 
-# Title
-st.markdown("<h1 style='color: #2E86C1;'>💳 BankEase Fraud Detection System</h1>", unsafe_allow_html=True)
-st.write("Welcome to the interactive fraud detection system. Fill in the transaction details below and select a model to predict whether it's fraudulent or not.")
+    with st.expander("Advanced (optional)"):
+        model_version = st.text_input(
+            "Model version",
+            value="current",
+            help="Use 'current' or a specific saved version like vYYYYMMDD_HHMMSS.",
+        )
 
-with st.form("fraud_form"):
-    from_account = st.number_input("From Account ID", min_value=1, step=1)
-    to_account = st.number_input("To Account ID", min_value=1, step=1)
-    amount = st.number_input("Transaction Amount ($)", min_value=0.01, step=0.01)
-    hour = st.slider("Transaction Hour", 0, 23)
-    day_name = st.selectbox("Day of Week", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
-    dayofweek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].index(day_name)
-    model_name = st.selectbox("Choose Model", options=list(models.keys()))
-    submitted = st.form_submit_button("🚀 Predict")
+    submitted = st.form_submit_button("Score transaction")
 
-# 🚦 Prediction Logic
+# ----- Call backend -----
 if submitted:
-    input_df = pd.DataFrame([{
-        "from_account": from_account,
-        "to_account": to_account,
-        "amount": amount,
-        "hour": hour,
-        "dayofweek": dayofweek
-    }])
+    payload = {
+        "user_id": int(user_id),
+        "amount": float(amount),
+        "location": int(location),
+        "hour": int(hour),
+        "dayofweek": int(dayofweek),
+        "model": model,
+        "model_version": model_version or "current",
+    }
 
-    scaled = scaler.transform(input_df)
-    model = models[model_name]
-    prediction = model.predict(scaled)[0]
-
-    st.success(f"✅ Model: {model_name}")
-    if prediction:
-        st.error("🚨 Yes, this is likely a fraudulent transaction.")
+    t0 = time.perf_counter()
+    try:
+        resp = requests.post(f"{API_BASE}/predict", json=payload, timeout=10)
+    except requests.exceptions.RequestException as e:
+        st.error(f"Network error contacting API: {e}")
     else:
-        st.success("✅ No, transaction seems legitimate.")
-            
-st.markdown("### 🔍 Dataset Insight (Simulated)")
+        latency_ms = (time.perf_counter() - t0) * 1000.0
 
-# Optional: Simulate basic dataset for demo chart
-fraud_count = 124
-legit_count = 876
+        if resp.status_code != 200:
+            # Neutral error display
+            try:
+                info = resp.json()
+            except Exception:
+                info = {"error": "Unknown error"}
+            st.error(f"Request failed ({resp.status_code}): {info.get('error','')}")
+        else:
+            data = resp.json()
 
-fig, ax = plt.subplots()
-ax.pie([fraud_count, legit_count], labels=["Fraud", "Legit"], autopct="%1.1f%%", colors=["#E74C3C", "#2ECC71"])
-st.pyplot(fig)
+            # ----- Header line with provenance -----
+            st.subheader("Result")
+            st.caption(
+                f"Model: **{data.get('model_used','?')}** · "
+                f"Version: **{data.get('model_version','?')}** · "
+                f"Latency: **{latency_ms:.1f} ms**"
+            )
+
+            # ----- Probability + decision -----
+            prob = data.get("probability", None)
+            pred = bool(data.get("prediction", False))
+
+            if prob is not None:
+                pct = max(0.0, min(1.0, float(prob)))
+                st.metric("Fraud probability", f"{pct*100:.2f}%")
+                st.progress(pct)
+            else:
+                st.info("Model did not return a probability; showing class label only.")
+
+            st.write("Decision:", "**FRAUD**" if pred else "**LEGIT**")
+
+            # Optional: show the raw API payload/response for reviewers
+            with st.expander("Details (request/response)"):
+                st.code("Request:\n" + json.dumps(payload, indent=2))
+                st.code("Response:\n" + json.dumps(data, indent=2))

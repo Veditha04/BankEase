@@ -51,3 +51,6 @@ backend/instance/bankease.db
 *.pkl
 backend/models/
 
+backend/models/
+*.joblib
+streamlit_app/.streamlit/
