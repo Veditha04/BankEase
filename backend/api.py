@@ -1,16 +1,16 @@
 # backend/api.py
 from flask import Blueprint, request, jsonify
 from werkzeug.exceptions import BadRequest
-
-from utils import predict_with_model   # returns (y_hat, p_hat)
-from model_manager import ModelManager                    # <- add
+from metrics import PREDICTION_COUNT, PREDICTION_ERRORS, PREDICTION_LATENCY
+from utils import predict_with_model          # uses your existing backend/utils.py
+from model_manager import ModelManager        # uses your existing backend/model_manager.py
 
 api_bp = Blueprint("api", __name__)
-_mm = ModelManager(model_root="backend/models")           # <- add
+_mm = ModelManager(model_root="backend/models")
 
 @api_bp.route("/status", methods=["GET"])
 def status():
-    # keep neutral status (no emoji)
+    # neutral status (no emoji)
     return jsonify({"status": "API is running"}), 200
 
 
@@ -33,16 +33,19 @@ def predict():
     model_version = data.get("model_version", "current")
 
     try:
-        # Predict (utils uses ModelManager under the hood)
-        y_hat, p_hat = predict_with_model(
-            data, model_name=model_name, model_version=model_version
-        )
+        # time just the inference
+        with PREDICTION_LATENCY.labels(model_name).time():
+            y_hat, p_hat = predict_with_model(
+                data, model_name=model_name, model_version=model_version
+            )
 
-        # Resolve the "current" pointer to a concrete version string
+        # success → count it
+        PREDICTION_COUNT.labels(model_name).inc()
+
+        # Resolve "current" to a concrete version string
         try:
             resolved_version = _mm.resolve_version(model_name, model_version)
         except FileNotFoundError:
-            # if you’re still on legacy files, fall back to whatever was requested
             resolved_version = model_version
 
         resp = {
@@ -57,6 +60,7 @@ def predict():
 
     except BadRequest:
         return jsonify({"error": "Bad request"}), 400
-    except Exception:
-        # your app-level error handler will log details
+    except Exception as e:
+        # error → count it and return neutral 500
+        PREDICTION_ERRORS.labels(type=e.__class__.__name__).inc()
         return jsonify({"error": "Prediction failed"}), 500
