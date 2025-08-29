@@ -3,6 +3,9 @@ import time
 import json
 import requests
 import streamlit as st
+from style_helper import inject_noise_gradient  # or inject_diagonal_hatch / inject_subtle_grid
+inject_noise_gradient()
+
 
 # ----- Configuration -----
 # You can override API_BASE by creating .streamlit/secrets.toml with:
