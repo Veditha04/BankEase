@@ -54,3 +54,17 @@ backend/models/
 backend/models/
 *.joblib
 streamlit_app/.streamlit/
+
+# model artifacts
+backend/models/*/*/model.joblib
+backend/models/*/*/preprocess.joblib
+backend/models/*/*/*.pkl
+backend/models/*/*/*.onnx
+backend/models/*/*/*.bin
+backend/models/*/*/*.pt
+backend/models/*/*/*.zip
+backend/models/*/*/*.tar.gz
+
+# keep pointers/metadata
+!backend/models/*/current.txt
+!backend/models/*/*/metadata.json
