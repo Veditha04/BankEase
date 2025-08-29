@@ -1,0 +1,8 @@
+{
+  "version": "v20250828_152717",
+  "family": "xgb",
+  "created_at": "2025-08-28T15:27:17.143218",
+  "metrics": {
+    "note": "migrated from legacy pickle; metrics unknown"
+  }
+}
