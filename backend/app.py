@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 import os
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
-from datetime import datetime
+from datetime import datetime, timedelta
 from api import api_bp
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
@@ -75,6 +75,7 @@ print("Database URI being used:", app.config['SQLALCHEMY_DATABASE_URI'])
 
 # ---------------- JWT & DB init ----------------
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'super-secret')
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=8)
 jwt = JWTManager(app)
 db = SQLAlchemy(app)
 
@@ -118,18 +119,43 @@ def where_is_db():
         "db_path": str(db_path.absolute())
     })
 
-@app.route('/add-test-data')
+@app.route('/add-test-data', methods=['POST', 'GET'])
 def add_test_data():
     try:
-        user1 = User(username="john_doe", email="john@bankease.com"); user1.set_password("test123")
-        user2 = User(username="jane_smith", email="jane@bankease.com"); user2.set_password("test123")
-        db.session.add_all([user1, user2]); db.session.commit()
-        account1 = Account(user_id=user1.id, balance=1000)
-        account2 = Account(user_id=user2.id, balance=500)
-        db.session.add_all([account1, account2]); db.session.commit()
-        return jsonify({"message": "Test users and accounts added."})
+        def ensure_user_and_account(username: str, email: str, password: str, init_balance: float):
+            u = User.query.filter((User.username == username) | (User.email == email)).first()
+            created_user = False
+            if not u:
+                u = User(username=username, email=email)
+                u.set_password(password)
+                db.session.add(u)
+                db.session.flush()
+                created_user = True
+
+            acc = Account.query.filter_by(user_id=u.id).first()
+            created_account = False
+            if not acc:
+                acc = Account(user_id=u.id, balance=init_balance)
+                db.session.add(acc)
+                db.session.flush()
+                created_account = True
+
+            return {
+                "user_id": u.id,
+                "account_id": acc.id,
+                "user_created": created_user,
+                "account_created": created_account
+            }
+
+        john = ensure_user_and_account("john_doe", "john@bankease.com", "test123", 1000.0)
+        jane = ensure_user_and_account("jane_smith", "jane@bankease.com", "test123", 500.0)
+        db.session.commit()
+        return jsonify({"message": "OK", "john": john, "jane": jane}), 200
+
     except Exception as e:
+        db.session.rollback()
         return jsonify({"error": str(e)}), 500
+
 
 @app.route('/register', methods=['POST'])
 def register():

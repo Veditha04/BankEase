@@ -4,5 +4,33 @@
   "created_at": "2025-08-28T15:27:17.149394",
   "metrics": {
     "note": "migrated from legacy pickle; metrics unknown"
+  },
+  "features": [
+    "user_id",
+    "amount",
+    "location",
+    "hour",
+    "dayofweek"
+  ],
+  "constraints": {
+    "user_id": {
+      "min": 1,
+      "max": 1002
+    },
+    "amount": {
+      "min": 5.01
+    },
+    "location": {
+      "min": 0,
+      "max": 50
+    },
+    "hour": {
+      "min": 0,
+      "max": 23
+    },
+    "dayofweek": {
+      "min": 0,
+      "max": 6
+    }
   }
 }

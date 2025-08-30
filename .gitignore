@@ -54,17 +54,18 @@ backend/models/
 backend/models/
 *.joblib
 streamlit_app/.streamlit/
+streamlit_app/.streamlit/secrets.toml
 
-# model artifacts
-backend/models/*/*/model.joblib
-backend/models/*/*/preprocess.joblib
+
+# --- model registry rules ---
+backend/models/**
+!backend/models/**/
+!backend/models/*/current.txt
+!backend/models/*/*/metadata.json
+backend/models/*/*/*.joblib
 backend/models/*/*/*.pkl
 backend/models/*/*/*.onnx
 backend/models/*/*/*.bin
 backend/models/*/*/*.pt
 backend/models/*/*/*.zip
 backend/models/*/*/*.tar.gz
-
-# keep pointers/metadata
-!backend/models/*/current.txt
-!backend/models/*/*/metadata.json
